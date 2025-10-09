@@ -31,7 +31,7 @@ async function getTodayData() {
   try {
     logger.debug('Fetching today data from Lifestack');
 
-    const response = await lifestackApi.get('/api/today');
+    const response = await lifestackApi.get('/api/unified/today');
 
     logger.debug('Successfully fetched today data from Lifestack');
 
@@ -62,11 +62,13 @@ async function getTodayEvents() {
   try {
     logger.debug('Fetching today events from Lifestack');
 
-    const response = await lifestackApi.get('/api/today/events');
+    const response = await lifestackApi.get('/api/calendar/events/today');
 
     logger.debug('Successfully fetched today events from Lifestack');
 
-    return response.data;
+    // Extract events array from response (handle both array and object responses)
+    const data = response.data;
+    return Array.isArray(data) ? data : (data.events || []);
   } catch (error) {
     logger.error(`Error fetching today events from Lifestack: ${error.message}`);
 
@@ -87,11 +89,13 @@ async function getTasks() {
   try {
     logger.debug('Fetching tasks from Lifestack');
 
-    const response = await lifestackApi.get('/api/tasks');
+    const response = await lifestackApi.get('/api/unified/tasks');
 
     logger.debug('Successfully fetched tasks from Lifestack');
 
-    return response.data;
+    // Extract tasks array from response (handle both array and object responses)
+    const data = response.data;
+    return Array.isArray(data) ? data : (data.tasks || []);
   } catch (error) {
     logger.error(`Error fetching tasks from Lifestack: ${error.message}`);
 
