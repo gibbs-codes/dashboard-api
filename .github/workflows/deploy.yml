@@ -67,15 +67,6 @@ jobs:
           exit 1
         fi
         
-        echo "Copying service account credentials..."
-        if [ -f "$APP_SECRETS/service-account.json" ]; then
-          cp $APP_SECRETS/service-account.json $DEPLOY_DIR/service-account.json
-          echo "✅ Service account file copied"
-        else
-          echo "❌ Service account file not found at $APP_SECRETS/service-account.json"
-          exit 1
-        fi
-        
     - name: Build and start container
       env:
         DOCKER_CONFIG: ~/.docker
@@ -97,7 +88,6 @@ jobs:
           --restart unless-stopped \
           --network gibbs-apps \
           -p 3001:3001 \
-          -v $(pwd)/service-account.json:/usr/src/app/service-account.json:ro \
           --env-file .env \
           -e NODE_ENV=production \
           -e PORT=3001 \
