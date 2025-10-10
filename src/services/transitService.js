@@ -131,10 +131,10 @@ async function fetchTrainArrivals(stopId) {
 
 // ---------------------- Formatters ----------------------
 function formatBusPredictions(predictions, direction) {
-  const now = moment();
+  const now = moment.tz('America/Chicago');
   const minutePredictions = predictions
     .map(pred => {
-      const predTime = moment(pred.prdtm, 'YYYYMMDD HH:mm');
+      const predTime = moment.tz(pred.prdtm, 'YYYYMMDD HH:mm', 'America/Chicago');
       const minutesAway = Math.max(0, predTime.diff(now, 'minutes'));
       return {
         route: pred.rt,
@@ -155,12 +155,12 @@ function formatBusPredictions(predictions, direction) {
  * Normalize CTA arrivals -> our shape, with optional line filter.
  */
 function formatTrainArrivals(arrivals, { lineCode = null } = {}) {
-  const now = moment();
+  const now = moment.tz('America/Chicago');
   const filtered = lineCode ? arrivals.filter(a => a.rt === lineCode) : arrivals;
 
   const mapped = filtered
     .map(arrival => {
-      const arrivalTime = moment(arrival.arrT);
+      const arrivalTime = moment.tz(arrival.arrT, 'YYYYMMDD HH:mm:ss', 'America/Chicago');
       const minutesAway = Math.max(0, arrivalTime.diff(now, 'minutes'));
       return {
         line: arrival.rt,             // 'Red' | 'Brn' | 'P'
