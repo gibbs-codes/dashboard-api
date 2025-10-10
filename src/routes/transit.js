@@ -17,11 +17,11 @@ function formatTransitResponse(buses, trains) {
     },
     red: {
       north: trains?.lines?.red?.arrivals || [],
-      south: [] // Can be added if needed
+      south: trains?.lines?.red?.arrivals || []
     },
     brown: {
       north: trains?.lines?.brown?.arrivals || [],
-      south: [] // Can be added if needed
+      south: trains?.lines?.brown?.arrivals || []
     },
     lastUpdated: new Date().toISOString()
   };

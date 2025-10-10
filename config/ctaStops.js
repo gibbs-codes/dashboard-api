@@ -51,7 +51,7 @@ module.exports = {
       lineCode: 'Red',
       stops: [
         {
-          stopId: '41380',  // Belmont Red Line station
+          stopId: '41320',  // Belmont Red Line station (3150 N Sheffield Ave)
           stopName: 'Belmont',
           direction: 'Service toward 95th/Dan Ryan'
         }
@@ -64,7 +64,7 @@ module.exports = {
       lineCode: 'Brn',
       stops: [
         {
-          stopId: '40460',  // Belmont Brown Line station
+          stopId: '41320',  // Belmont Brown Line station (same as Red - shared station)
           stopName: 'Belmont',
           direction: 'Service toward Kimball'
         }

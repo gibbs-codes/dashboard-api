@@ -2,6 +2,7 @@ const moment = require('moment-timezone');
 const transitService = require('../services/transitService');
 const weatherService = require('../services/weatherService');
 const lifestackClient = require('../services/lifestackClient');
+const artService = require('../services/artService');
 const { getMode } = require('../../config/modes');
 const logger = require('../utils/logger');
 
@@ -145,16 +146,40 @@ async function fetchTasksData() {
 }
 
 /**
+ * Fetch artwork data with error handling
+ */
+async function fetchArtworkData() {
+  try {
+    const artwork = await artService.getCurrentArtwork();
+    return {
+      success: true,
+      data: artwork
+    };
+  } catch (error) {
+    logger.error(`Dashboard aggregator - artwork fetch failed: ${error.message}`);
+    return {
+      success: false,
+      error: error.message,
+      data: null
+    };
+  }
+}
+
+/**
  * Format transit data for dashboard
  */
 function formatTransitData(transitResult) {
   if (!transitResult.success || !transitResult.data) {
+    logger.warn('Transit result unsuccessful or no data');
     return null;
   }
 
   const { buses, trains } = transitResult.data;
 
-  return {
+  logger.debug(`Transit data - buses: ${JSON.stringify(buses)}`);
+  logger.debug(`Transit data - trains: ${JSON.stringify(trains)}`);
+
+  const formatted = {
     buses: {
       east: buses?.routes?.['77']?.eastbound || [],
       west: buses?.routes?.['77']?.westbound || []
@@ -168,6 +193,9 @@ function formatTransitData(transitResult) {
       south: []
     }
   };
+
+  logger.debug(`Formatted transit data: ${JSON.stringify(formatted)}`);
+  return formatted;
 }
 
 /**
@@ -225,6 +253,10 @@ async function aggregateDashboard(modeName = 'personal') {
     fetchKeys.push('tasks');
   }
 
+  // Always fetch artwork for all modes
+  fetchPromises.push(fetchArtworkData());
+  fetchKeys.push('artwork');
+
   // Fetch all data in parallel
   const results = await Promise.all(fetchPromises);
 
@@ -270,6 +302,15 @@ async function aggregateDashboard(modeName = 'personal') {
     } else {
       dashboard.tasks = tasks;
     }
+  }
+
+  // Add artwork data (always included) - returns both artworkCenter and artworkRight
+  if (fetchResults.artwork?.success && fetchResults.artwork.data) {
+    dashboard.artworkCenter = fetchResults.artwork.data.artworkCenter || null;
+    dashboard.artworkRight = fetchResults.artwork.data.artworkRight || null;
+  } else {
+    dashboard.artworkCenter = null;
+    dashboard.artworkRight = null;
   }
 
   // Add error information for failed fetches

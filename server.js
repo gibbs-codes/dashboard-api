@@ -16,7 +16,8 @@ const PORT = process.env.PORT || 3001;
 
 // Middleware
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || 'http://localhost:3000'
+  origin: '*',
+  credentials: true
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -177,6 +178,8 @@ process.on('SIGTERM', () => {
 
 // Handle uncaught exceptions
 process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:');
+  console.error(error);
   logger.error('Uncaught Exception:', error);
   process.exit(1);
 });
