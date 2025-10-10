@@ -1,0 +1,12 @@
+# Git
+.git
+.github
+.gitignore
+
+# Node
+node_modules
+
+# Environment & Documentation
+.env
+README.md
+dockerfile

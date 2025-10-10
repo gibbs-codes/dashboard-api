@@ -20,9 +20,8 @@ RUN addgroup -g 1001 -S nodejs && \
 # Copy the rest of the application code
 COPY . .
 
-# Create the src directory and set permissions
-RUN mkdir -p /usr/src/app/src && \
-    chown -R nodejs:nodejs /usr/src/app
+# Set permissions for the non-root user
+RUN chown -R nodejs:nodejs /usr/src/app
 
 # Switch to non-root user
 USER nodejs
@@ -32,7 +31,7 @@ EXPOSE 3001
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD curl -f http://localhost:3001/ || exit 1
+  CMD curl -f http://localhost:3001/health
 
 # Define the command to run the app
 CMD ["npm", "start"]
