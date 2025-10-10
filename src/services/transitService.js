@@ -1,3 +1,4 @@
+// transitService.js (compat fix: add direction + arrivals)
 const axios = require('axios');
 const moment = require('moment-timezone');
 const logger = require('../utils/logger');
@@ -5,14 +6,13 @@ const cacheManager = require('../utils/cacheManager');
 const ctaStops = require('../../config/ctaStops');
 const cacheConfig = require('../../config/cache');
 
-// CTA API endpoints
 const CTA_BUS_API_BASE = 'http://www.ctabustracker.com/bustime/api/v2';
 const CTA_TRAIN_API_BASE = 'http://lapi.transitchicago.com/api/1.0';
-
-// Cache TTL in seconds (from centralized config)
 const CACHE_TTL = cacheConfig.transit.ttl;
 
-// Mock data for when API is unavailable
+// Limit how many predictions per direction to keep (set to null to disable)
+const TRAIN_LIMIT_PER_DIRECTION = 8;
+
 const MOCK_BUS_DATA = {
   route: '77',
   eastbound: [
@@ -32,7 +32,7 @@ const MOCK_TRAIN_DATA = {
     stopName: 'Belmont',
     arrivals: [
       { line: 'Red', destination: '95th/Dan Ryan', minutesAway: 3, arrivalTime: '12:03', isApproaching: false, isDelayed: false, runNumber: '101' },
-      { line: 'Red', destination: '95th/Dan Ryan', minutesAway: 10, arrivalTime: '12:10', isApproaching: false, isDelayed: false, runNumber: '102' }
+      { line: 'Red', destination: 'Howard', minutesAway: 6, arrivalTime: '12:06', isApproaching: false, isDelayed: false, runNumber: '102' }
     ],
     timestamp: new Date().toISOString()
   },
@@ -40,55 +40,36 @@ const MOCK_TRAIN_DATA = {
     line: 'Brown',
     stopName: 'Belmont',
     arrivals: [
-      { line: 'Brn', destination: 'Kimball', minutesAway: 4, arrivalTime: '12:04', isApproaching: false, isDelayed: false, runNumber: '201' },
+      { line: 'Brn', destination: 'Loop', minutesAway: 4, arrivalTime: '12:04', isApproaching: false, isDelayed: false, runNumber: '201' },
       { line: 'Brn', destination: 'Kimball', minutesAway: 12, arrivalTime: '12:12', isApproaching: false, isDelayed: false, runNumber: '202' }
     ],
     timestamp: new Date().toISOString()
   }
 };
 
-/**
- * Fetch bus predictions from CTA Bus Tracker API
- */
+// ---------------------- CTA Calls ----------------------
 async function fetchBusPredictions(stopId, routeId) {
   try {
     const apiKey = process.env.CTA_BUS_API_KEY;
-    if (!apiKey) {
-      throw new Error('CTA_BUS_API_KEY not configured');
-    }
+    if (!apiKey) throw new Error('CTA_BUS_API_KEY not configured');
 
     const url = `${CTA_BUS_API_BASE}/getpredictions`;
-    const params = {
-      key: apiKey,
-      stpid: stopId,
-      rt: routeId,
-      format: 'json'
-    };
+    const params = { key: apiKey, stpid: stopId, rt: routeId, format: 'json' };
 
-    // Log request details (with redacted key)
     const safeParams = { ...params, key: `${apiKey.substring(0, 4)}...` };
     logger.debug(`Fetching bus predictions: ${url}?${new URLSearchParams(safeParams).toString()}`);
 
-    const response = await axios.get(url, {
-      params,
-      timeout: 10000
-    });
-
+    const response = await axios.get(url, { params, timeout: 10000 });
     logger.debug(`Bus API response status: ${response.status}`);
     logger.debug(`Bus API response data: ${JSON.stringify(response.data)}`);
 
-    // Check for API errors
     if (response.data['bustime-response']?.error) {
       const errors = response.data['bustime-response'].error;
       const errorMsg = errors[0]?.msg || 'Unknown error';
-
-      // "No service scheduled" is expected at night/off-peak - not an error
       if (errorMsg.toLowerCase().includes('no service scheduled')) {
-        logger.debug(`No bus service currently scheduled for stop ${stopId}, route ${routeId} (expected at night/off-peak)`);
+        logger.debug(`No bus service currently scheduled for stop ${stopId}, route ${routeId}`);
         return [];
       }
-
-      // Log other errors as warnings
       logger.warn(`CTA Bus API error for stop ${stopId}, route ${routeId}: ${errorMsg}`);
       logger.warn(`Full error details: ${JSON.stringify(errors)}`);
       return [];
@@ -110,37 +91,21 @@ async function fetchBusPredictions(stopId, routeId) {
   }
 }
 
-/**
- * Fetch train arrivals from CTA Train Tracker API
- */
 async function fetchTrainArrivals(stopId) {
   try {
     const apiKey = process.env.CTA_TRAIN_API_KEY;
-    if (!apiKey) {
-      throw new Error('CTA_TRAIN_API_KEY not configured');
-    }
+    if (!apiKey) throw new Error('CTA_TRAIN_API_KEY not configured');
 
     const url = `${CTA_TRAIN_API_BASE}/ttarrivals.aspx`;
-    const params = {
-      key: apiKey,
-      mapid: stopId,
-      outputType: 'JSON'
-    };
+    const params = { key: apiKey, mapid: stopId, outputType: 'JSON' };
 
-    // Log request details (with redacted key)
     const safeParams = { ...params, key: `${apiKey.substring(0, 4)}...` };
     logger.debug(`Fetching train arrivals: ${url}?${new URLSearchParams(safeParams).toString()}`);
 
-    const response = await axios.get(url, {
-      params,
-      timeout: 10000
-    });
-
+    const response = await axios.get(url, { params, timeout: 10000 });
     logger.debug(`Train API response status: ${response.status}`);
     logger.debug(`Train API response data: ${JSON.stringify(response.data)}`);
 
-    // Check for API errors
-    // Note: errCd "0" means SUCCESS in CTA API
     if (response.data.ctatt?.errCd && response.data.ctatt.errCd !== "0") {
       const errorCode = response.data.ctatt?.errCd;
       const errorMsg = response.data.ctatt?.errNm || 'Unknown error';
@@ -164,9 +129,7 @@ async function fetchTrainArrivals(stopId) {
   }
 }
 
-/**
- * Format bus predictions into minute predictions array
- */
+// ---------------------- Formatters ----------------------
 function formatBusPredictions(predictions, direction) {
   const now = moment();
   const minutePredictions = predictions
@@ -189,17 +152,19 @@ function formatBusPredictions(predictions, direction) {
 }
 
 /**
- * Format train arrivals into minute predictions array
+ * Normalize CTA arrivals -> our shape, with optional line filter.
  */
-function formatTrainArrivals(arrivals) {
+function formatTrainArrivals(arrivals, { lineCode = null } = {}) {
   const now = moment();
-  const minutePredictions = arrivals
+  const filtered = lineCode ? arrivals.filter(a => a.rt === lineCode) : arrivals;
+
+  const mapped = filtered
     .map(arrival => {
       const arrivalTime = moment(arrival.arrT);
       const minutesAway = Math.max(0, arrivalTime.diff(now, 'minutes'));
       return {
-        line: arrival.rt,
-        destination: arrival.destNm,
+        line: arrival.rt,             // 'Red' | 'Brn' | 'P'
+        destination: arrival.destNm,  // 'Howard' | '95th/Dan Ryan' | 'Kimball' | 'Loop' | ...
         minutesAway,
         arrivalTime: arrivalTime.format('HH:mm'),
         isApproaching: arrival.isApp === '1',
@@ -209,12 +174,38 @@ function formatTrainArrivals(arrivals) {
     })
     .sort((a, b) => a.minutesAway - b.minutesAway);
 
-  return minutePredictions;
+  return mapped;
 }
 
 /**
- * Get Route 77 bus predictions (both directions)
+ * Belmont-specific split by destination.
+ * Red:    North -> Howard, South -> 95th/Dan Ryan
+ * Brown:  North -> Kimball, South -> Loop
  */
+function splitByDirectionForBelmont(lineCode, items, limitPerDirection = TRAIN_LIMIT_PER_DIRECTION) {
+  const northDests = lineCode === 'Red' ? ['Howard']
+                   : lineCode === 'Brn' ? ['Kimball']
+                   : [];
+  const southDests = lineCode === 'Red' ? ['95th/Dan Ryan']
+                   : lineCode === 'Brn' ? ['Loop']
+                   : [];
+
+  let north = items.filter(x => northDests.includes(x.destination));
+  let south = items.filter(x => southDests.includes(x.destination));
+
+  if (Number.isInteger(limitPerDirection)) {
+    north = north.slice(0, limitPerDirection);
+    south = south.slice(0, limitPerDirection);
+  }
+
+  // 🔧 Compatibility: add a `direction` field to each item so downstream filters can use it
+  north = north.map(x => ({ ...x, direction: 'Northbound' }));
+  south = south.map(x => ({ ...x, direction: 'Southbound' }));
+
+  return { north, south };
+}
+
+// ---------------------- Bus: Route 77 ----------------------
 async function getRoute77Buses() {
   const cacheKey = 'transit:buses:route77';
 
@@ -224,7 +215,6 @@ async function getRoute77Buses() {
       try {
         const { route77 } = ctaStops.bus;
 
-        // Fetch both directions in parallel
         const [eastboundPreds, westboundPreds] = await Promise.all([
           fetchBusPredictions(route77.eastbound.stopId, route77.routeId),
           fetchBusPredictions(route77.westbound.stopId, route77.routeId)
@@ -249,9 +239,12 @@ async function getRoute77Buses() {
   );
 }
 
-/**
- * Get Red Line train arrivals
- */
+// ---------------------- Trains: Red / Brown ----------------------
+function addArrivalsCompat(north, south) {
+  // Provide a flat array some legacy formatters expect
+  return [...north, ...south].sort((a, b) => a.minutesAway - b.minutesAway);
+}
+
 async function getRedLine() {
   const cacheKey = 'transit:trains:redline';
 
@@ -263,27 +256,40 @@ async function getRedLine() {
         const stop = redLine.stops[0];
 
         const arrivals = await fetchTrainArrivals(stop.stopId);
-        const predictions = formatTrainArrivals(arrivals);
+        const normalized = formatTrainArrivals(arrivals, { lineCode: 'Red' });
+        const { north, south } = splitByDirectionForBelmont('Red', normalized);
+
+        // 🔧 Compatibility: include a flat `arrivals` array too
+        const arrivalsCompat = addArrivalsCompat(north, south);
 
         return {
           line: 'Red',
           stopName: stop.stopName,
-          arrivals: predictions,
+          north,
+          south,
+          arrivals: arrivalsCompat, // <— legacy/compat
           timestamp: new Date().toISOString()
         };
       } catch (error) {
         logger.error(`Error getting Red Line: ${error.message}`);
         logger.warn('Returning mock Red Line data due to API error');
-        return MOCK_TRAIN_DATA.red;
+        const normalized = (MOCK_TRAIN_DATA.red.arrivals || []);
+        const { north, south } = splitByDirectionForBelmont('Red', normalized);
+        const arrivalsCompat = addArrivalsCompat(north, south);
+        return {
+          line: 'Red',
+          stopName: MOCK_TRAIN_DATA.red.stopName || 'Belmont',
+          north,
+          south,
+          arrivals: arrivalsCompat,
+          timestamp: new Date().toISOString()
+        };
       }
     },
     CACHE_TTL
   );
 }
 
-/**
- * Get Brown Line train arrivals
- */
 async function getBrownLine() {
   const cacheKey = 'transit:trains:brownline';
 
@@ -295,85 +301,94 @@ async function getBrownLine() {
         const stop = brownLine.stops[0];
 
         const arrivals = await fetchTrainArrivals(stop.stopId);
-        const predictions = formatTrainArrivals(arrivals);
+        const normalized = formatTrainArrivals(arrivals, { lineCode: 'Brn' });
+        const { north, south } = splitByDirectionForBelmont('Brn', normalized);
+
+        const arrivalsCompat = addArrivalsCompat(north, south);
 
         return {
           line: 'Brown',
           stopName: stop.stopName,
-          arrivals: predictions,
+          north,
+          south,
+          arrivals: arrivalsCompat, // <— legacy/compat
           timestamp: new Date().toISOString()
         };
       } catch (error) {
         logger.error(`Error getting Brown Line: ${error.message}`);
         logger.warn('Returning mock Brown Line data due to API error');
-        return MOCK_TRAIN_DATA.brown;
+        const normalized = (MOCK_TRAIN_DATA.brown.arrivals || []);
+        const { north, south } = splitByDirectionForBelmont('Brn', normalized);
+        const arrivalsCompat = addArrivalsCompat(north, south);
+        return {
+          line: 'Brown',
+          stopName: MOCK_TRAIN_DATA.brown.stopName || 'Belmont',
+          north,
+          south,
+          arrivals: arrivalsCompat,
+          timestamp: new Date().toISOString()
+        };
       }
     },
     CACHE_TTL
   );
 }
 
-/**
- * Get all bus predictions
- */
+// ---------------------- Aggregations ----------------------
 async function getBuses() {
   try {
     const route77 = await getRoute77Buses();
     return {
-      routes: {
-        '77': route77
-      },
+      routes: { '77': route77 },
       timestamp: new Date().toISOString()
     };
   } catch (error) {
     logger.error(`Error getting all buses: ${error.message}`);
     logger.warn('Returning mock bus data due to error');
     return {
-      routes: {
-        '77': MOCK_BUS_DATA
-      },
+      routes: { '77': MOCK_BUS_DATA },
       timestamp: new Date().toISOString()
     };
   }
 }
 
-/**
- * Get all train predictions
- */
 async function getTrains() {
   try {
-    const [redLine, brownLine] = await Promise.all([
-      getRedLine(),
-      getBrownLine()
-    ]);
-
+    const [redLine, brownLine] = await Promise.all([getRedLine(), getBrownLine()]);
     return {
-      lines: {
-        red: redLine,
-        brown: brownLine
-      },
+      lines: { red: redLine, brown: brownLine },
       timestamp: new Date().toISOString()
     };
   } catch (error) {
     logger.error(`Error getting all trains: ${error.message}`);
     logger.warn('Returning mock train data due to error');
+    const redNormalized = splitByDirectionForBelmont('Red', (MOCK_TRAIN_DATA.red.arrivals || []));
+    const brownNormalized = splitByDirectionForBelmont('Brn', (MOCK_TRAIN_DATA.brown.arrivals || []));
     return {
-      lines: MOCK_TRAIN_DATA,
+      lines: {
+        red: {
+          line: 'Red',
+          stopName: MOCK_TRAIN_DATA.red.stopName || 'Belmont',
+          ...redNormalized,
+          arrivals: addArrivalsCompat(redNormalized.north, redNormalized.south),
+          timestamp: new Date().toISOString()
+        },
+        brown: {
+          line: 'Brown',
+          stopName: MOCK_TRAIN_DATA.brown.stopName || 'Belmont',
+          ...brownNormalized,
+          arrivals: addArrivalsCompat(brownNormalized.north, brownNormalized.south),
+          timestamp: new Date().toISOString()
+        }
+      },
       timestamp: new Date().toISOString()
     };
   }
 }
 
-/**
- * Get all transit data (buses and trains)
- */
 async function getAll() {
   try {
-    const [buses, trains] = await Promise.all([
-      getBuses(),
-      getTrains()
-    ]);
-
+    const [buses, trains] = await Promise.all([getBuses(), getTrains()]);
     return {
       buses,
       trains,
@@ -382,15 +397,30 @@ async function getAll() {
   } catch (error) {
     logger.error(`Error getting all transit data: ${error.message}`);
     logger.warn('Returning all mock transit data due to error');
+    const redNormalized = splitByDirectionForBelmont('Red', (MOCK_TRAIN_DATA.red.arrivals || []));
+    const brownNormalized = splitByDirectionForBelmont('Brn', (MOCK_TRAIN_DATA.brown.arrivals || []));
     return {
       buses: {
-        routes: {
-          '77': MOCK_BUS_DATA
-        },
+        routes: { '77': MOCK_BUS_DATA },
         timestamp: new Date().toISOString()
       },
       trains: {
-        lines: MOCK_TRAIN_DATA,
+        lines: {
+          red: {
+            line: 'Red',
+            stopName: 'Belmont',
+            ...redNormalized,
+            arrivals: addArrivalsCompat(redNormalized.north, redNormalized.south),
+            timestamp: new Date().toISOString()
+          },
+          brown: {
+            line: 'Brown',
+            stopName: 'Belmont',
+            ...brownNormalized,
+            arrivals: addArrivalsCompat(brownNormalized.north, brownNormalized.south),
+            timestamp: new Date().toISOString()
+          }
+        },
         timestamp: new Date().toISOString()
       },
       timestamp: new Date().toISOString()
