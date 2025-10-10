@@ -32,6 +32,11 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Root endpoint
+app.get('/', (req, res) => {
+  res.json({ message: 'Welcome to the Dashboard API. See /health for status.' });
+});
+
 // API Routes
 app.get('/api', (req, res) => {
   res.json({ message: 'Dashboard API Server' });
