@@ -82,6 +82,20 @@ const MODES = {
       tasks: true,
       nextEvent: true
     }
+  },
+
+  // Gallery mode - Art display with weather and transit
+  gallery: {
+    name: 'Gallery',
+    description: 'Art display from Art Institute of Chicago with weather and transit info',
+    includes: {
+      weather: true,
+      transit: true,
+      calendar: false,
+      tasks: false,
+      nextEvent: false
+    },
+    artStyles: ['Cubism', 'Expressionism', 'Surrealism', 'Abstract', 'Minimalism', 'Constructivism', 'Symbolism', 'Suprematism', 'Bauhaus']
   }
 };
 

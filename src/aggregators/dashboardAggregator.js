@@ -148,9 +148,10 @@ async function fetchTasksData() {
 /**
  * Fetch artwork data with error handling
  */
-async function fetchArtworkData() {
+async function fetchArtworkData(artStyles = null) {
   try {
-    const artwork = await artService.getCurrentArtwork();
+    const filters = artStyles ? { styles: artStyles } : {};
+    const artwork = await artService.getCurrentArtwork(filters);
     return {
       success: true,
       data: artwork
@@ -253,8 +254,8 @@ async function aggregateDashboard(modeName = 'personal') {
     fetchKeys.push('tasks');
   }
 
-  // Always fetch artwork for all modes
-  fetchPromises.push(fetchArtworkData());
+  // Always fetch artwork for all modes (pass art styles if configured)
+  fetchPromises.push(fetchArtworkData(mode.artStyles || null));
   fetchKeys.push('artwork');
 
   // Fetch all data in parallel
@@ -304,13 +305,15 @@ async function aggregateDashboard(modeName = 'personal') {
     }
   }
 
-  // Add artwork data (always included) - returns both artworkCenter and artworkRight
+  // Add artwork data (always included) - returns artworkCenter, artworkRight, and artworkTV
   if (fetchResults.artwork?.success && fetchResults.artwork.data) {
     dashboard.artworkCenter = fetchResults.artwork.data.artworkCenter || null;
     dashboard.artworkRight = fetchResults.artwork.data.artworkRight || null;
+    dashboard.artworkTV = fetchResults.artwork.data.artworkTV || null;
   } else {
     dashboard.artworkCenter = null;
     dashboard.artworkRight = null;
+    dashboard.artworkTV = null;
   }
 
   // Add error information for failed fetches

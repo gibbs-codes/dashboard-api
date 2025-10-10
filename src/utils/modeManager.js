@@ -7,7 +7,7 @@ const logger = require('./logger');
  */
 class ModeManager {
   constructor() {
-    this.currentMode = 'personal'; // Default mode
+    this.currentMode = 'gallery'; // Default mode
     this.lastChanged = new Date().toISOString();
     this.changeHistory = [];
     logger.info(`ModeManager initialized with mode: ${this.currentMode}`);
@@ -141,7 +141,7 @@ class ModeManager {
    */
   reset() {
     const previousMode = this.currentMode;
-    this.currentMode = 'personal';
+    this.currentMode = 'gallery';
     this.lastChanged = new Date().toISOString();
 
     logger.info(`Mode reset from ${previousMode} to ${this.currentMode}`);

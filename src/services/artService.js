@@ -12,6 +12,7 @@ const ARTWORK_CACHE_TTL = 3600; // 1 hour in seconds
 // Rotation intervals
 const ROTATION_INTERVAL_CENTER = 300; // 5 minutes in seconds (for portrait/center)
 const ROTATION_INTERVAL_RIGHT = 420; // 7 minutes in seconds (for landscape/right)
+const ROTATION_INTERVAL_TV = 360; // 6 minutes in seconds (for TV landscape)
 
 // Retry delay (500ms as specified)
 const RETRY_DELAY = 500;
@@ -33,21 +34,23 @@ function sleep(ms) {
 }
 
 /**
- * Fetch random artwork from Art Institute API using pagination fallback
+ * Fetch random artwork from Art Institute API using search by style
  * @param {string} orientation - 'portrait' or 'landscape'
+ * @param {object} filters - Optional filters (styles: array of style names)
  */
-async function fetchRandomArtwork(orientation = null) {
+async function fetchRandomArtwork(orientation = null, filters = {}) {
   try {
-    // Use pagination to get random artworks (more reliable than search)
-    const randomPage = Math.floor(Math.random() * 200) + 1;
+    // Select a random style from the provided styles, or use default
+    const styles = filters.styles || ['Cubism', 'Expressionism', 'Surrealism', 'Abstract', 'Minimalism', 'Constructivism', 'Symbolism', 'Suprematism', 'Bauhaus'];
+    const randomStyle = styles[Math.floor(Math.random() * styles.length)];
 
-    logger.debug(`Fetching ${orientation || 'any'} artworks from page ${randomPage}`);
+    logger.debug(`Searching for ${randomStyle} ${orientation || 'any'} artworks`);
 
-    const response = await axios.get(`${ART_API_BASE}/artworks`, {
+    const response = await axios.get(`${ART_API_BASE}/artworks/search`, {
       params: {
-        page: randomPage,
-        limit: 100,
-        fields: 'id,title,artist_display,date_display,image_id,thumbnail'
+        q: `${randomStyle} painting`,
+        fields: 'id,title,artist_display,date_display,image_id,thumbnail',
+        limit: 100
       },
       headers: API_HEADERS,
       timeout: 10000
@@ -56,9 +59,11 @@ async function fetchRandomArtwork(orientation = null) {
     logger.debug(`API response status: ${response.status}`);
 
     if (!response.data || !response.data.data || response.data.data.length === 0) {
-      logger.error('No artworks found in API response');
+      logger.warn(`No artworks found for style: ${randomStyle}`);
       throw new Error('No artworks found in API response');
     }
+
+    logger.debug(`Found ${response.data.data.length} artworks for style: ${randomStyle}`);
 
     // Filter artworks that have image_id
     let artworksWithImages = response.data.data.filter(art => art.image_id);
@@ -99,14 +104,14 @@ async function fetchRandomArtwork(orientation = null) {
     const randomIndex = Math.floor(Math.random() * artworksWithImages.length);
     const artwork = artworksWithImages[randomIndex];
 
-    logger.debug(`Selected artwork: ${artwork.title} (ID: ${artwork.id})`);
+    logger.debug(`Selected ${randomStyle} artwork: ${artwork.title} (ID: ${artwork.id})`);
 
     // Validate image_id before formatting
     if (!artwork.image_id) {
       throw new Error('Selected artwork missing image_id');
     }
 
-    return formatArtwork(artwork);
+    return formatArtwork(artwork, randomStyle);
   } catch (error) {
     if (error.response) {
       logger.error(`Art Institute API error: ${error.response.status} - ${error.response.statusText}`);
@@ -121,7 +126,7 @@ async function fetchRandomArtwork(orientation = null) {
 /**
  * Format artwork data for dashboard
  */
-function formatArtwork(data) {
+function formatArtwork(data, style = null) {
   try {
     if (!data.image_id) {
       throw new Error('Artwork missing image_id');
@@ -135,7 +140,8 @@ function formatArtwork(data) {
       title: data.title || 'Untitled',
       artist: data.artist_display || 'Unknown Artist',
       date: data.date_display || 'Unknown Date',
-      id: data.id.toString()
+      id: data.id.toString(),
+      style: style || 'Unknown Style'
     };
   } catch (error) {
     logger.error(`Error formatting artwork data: ${error.message}`);
@@ -147,32 +153,39 @@ function formatArtwork(data) {
  * Get current artwork with rotation logic by orientation
  * - Caches artwork for 1 hour (to avoid rate limits)
  * - Rotates based on orientation-specific intervals
- * @param {string} orientation - 'portrait' for center canvas, 'landscape' for right canvas
+ * @param {string} orientation - 'portrait' for center canvas, 'landscape' for right canvas, 'tv' for TV display
+ * @param {object} filters - Optional filters (styles, etc.)
  */
-async function getArtworkByOrientation(orientation) {
+async function getArtworkByOrientation(orientation, filters = {}) {
   try {
     // Determine rotation interval based on orientation
-    const rotationInterval = orientation === 'portrait'
-      ? ROTATION_INTERVAL_CENTER
-      : ROTATION_INTERVAL_RIGHT;
+    let rotationInterval;
+    if (orientation === 'portrait') {
+      rotationInterval = ROTATION_INTERVAL_CENTER;
+    } else if (orientation === 'tv') {
+      rotationInterval = ROTATION_INTERVAL_TV;
+    } else {
+      rotationInterval = ROTATION_INTERVAL_RIGHT;
+    }
 
     // Check if we have a rotation slot
     const now = Date.now();
     const rotationSlot = Math.floor(now / (rotationInterval * 1000));
-    const cacheKey = `artwork:rotation:${orientation}:${rotationSlot}`;
+    const filterKey = filters.styles ? `:${filters.styles.join('-')}` : '';
+    const cacheKey = `artwork:rotation:${orientation}${filterKey}:${rotationSlot}`;
 
     // Try to get artwork for current rotation slot
     return await cacheManager.getOrSet(
       cacheKey,
       async () => {
         // Check if we have cached artworks pool for this orientation
-        const poolKey = `artwork:pool:${orientation}`;
+        const poolKey = `artwork:pool:${orientation}${filterKey}`;
         let artworkPool = cacheManager.get(poolKey);
 
         if (!artworkPool || artworkPool.length === 0) {
           // Fetch multiple artworks to create a pool
-          logger.info(`Fetching new ${orientation} artwork pool`);
-          artworkPool = await fetchArtworkPool(12, orientation);
+          logger.info(`Fetching new ${orientation} artwork pool with filters: ${JSON.stringify(filters)}`);
+          artworkPool = await fetchArtworkPool(12, orientation, filters);
 
           // Cache the pool for 1 hour
           cacheManager.set(poolKey, artworkPool, ARTWORK_CACHE_TTL);
@@ -191,7 +204,8 @@ async function getArtworkByOrientation(orientation) {
     logger.error(`Error getting ${orientation} artwork: ${error.message}`);
 
     // Try to return cached artwork if available
-    const poolKey = `artwork:pool:${orientation}`;
+    const filterKey = filters.styles ? `:${filters.styles.join('-')}` : '';
+    const poolKey = `artwork:pool:${orientation}${filterKey}`;
     const cachedPool = cacheManager.get(poolKey);
 
     if (cachedPool && cachedPool.length > 0) {
@@ -206,24 +220,28 @@ async function getArtworkByOrientation(orientation) {
 }
 
 /**
- * Get both artworks (center portrait and right landscape)
+ * Get all three artworks (center portrait, right landscape, and TV landscape)
+ * @param {object} filters - Optional filters (styles, etc.)
  */
-async function getCurrentArtwork() {
+async function getCurrentArtwork(filters = {}) {
   try {
-    const [artworkCenter, artworkRight] = await Promise.all([
-      getArtworkByOrientation('portrait'),
-      getArtworkByOrientation('landscape')
+    const [artworkCenter, artworkRight, artworkTV] = await Promise.all([
+      getArtworkByOrientation('portrait', filters),
+      getArtworkByOrientation('landscape', filters),
+      getArtworkByOrientation('tv', filters) // TV uses its own rotation schedule
     ]);
 
     return {
       artworkCenter,
-      artworkRight
+      artworkRight,
+      artworkTV
     };
   } catch (error) {
     logger.error(`Error getting current artworks: ${error.message}`);
     return {
       artworkCenter: FALLBACK_ARTWORK,
-      artworkRight: FALLBACK_ARTWORK
+      artworkRight: FALLBACK_ARTWORK,
+      artworkTV: FALLBACK_ARTWORK
     };
   }
 }
@@ -232,14 +250,15 @@ async function getCurrentArtwork() {
  * Fetch a pool of artworks for rotation
  * @param {number} poolSize - Number of artworks to fetch
  * @param {string} orientation - 'portrait' or 'landscape'
+ * @param {object} filters - Optional filters (artworkTypes, etc.)
  */
-async function fetchArtworkPool(poolSize = 12, orientation = null) {
+async function fetchArtworkPool(poolSize = 12, orientation = null, filters = {}) {
   const artworks = [];
   const maxAttempts = poolSize * 3; // Try more times to get enough artworks with orientation filter
 
   for (let attempt = 0; attempt < maxAttempts && artworks.length < poolSize; attempt++) {
     try {
-      const artwork = await fetchRandomArtwork(orientation);
+      const artwork = await fetchRandomArtwork(orientation, filters);
 
       // Avoid duplicates
       if (!artworks.find(a => a.id === artwork.id)) {
@@ -274,25 +293,30 @@ async function fetchArtworkPool(poolSize = 12, orientation = null) {
 
 /**
  * Refresh artwork pools (can be called manually or by scheduler)
+ * @param {object} filters - Optional filters (artworkTypes, etc.)
  */
-async function refreshArtworkPool() {
+async function refreshArtworkPool(filters = {}) {
   try {
     logger.info('Refreshing artwork pools');
 
-    // Refresh both portrait and landscape pools
-    const [portraitPool, landscapePool] = await Promise.all([
-      fetchArtworkPool(12, 'portrait'),
-      fetchArtworkPool(12, 'landscape')
+    // Refresh portrait, landscape, and TV pools
+    const [portraitPool, landscapePool, tvPool] = await Promise.all([
+      fetchArtworkPool(12, 'portrait', filters),
+      fetchArtworkPool(12, 'landscape', filters),
+      fetchArtworkPool(12, 'tv', filters)
     ]);
 
-    cacheManager.set('artwork:pool:portrait', portraitPool, ARTWORK_CACHE_TTL);
-    cacheManager.set('artwork:pool:landscape', landscapePool, ARTWORK_CACHE_TTL);
+    const filterKey = filters.styles ? `:${filters.styles.join('-')}` : '';
+    cacheManager.set(`artwork:pool:portrait${filterKey}`, portraitPool, ARTWORK_CACHE_TTL);
+    cacheManager.set(`artwork:pool:landscape${filterKey}`, landscapePool, ARTWORK_CACHE_TTL);
+    cacheManager.set(`artwork:pool:tv${filterKey}`, tvPool, ARTWORK_CACHE_TTL);
 
     logger.info('Artwork pools refreshed successfully');
     return {
       success: true,
       portraitPoolSize: portraitPool.length,
-      landscapePoolSize: landscapePool.length
+      landscapePoolSize: landscapePool.length,
+      tvPoolSize: tvPool.length
     };
   } catch (error) {
     logger.error(`Error refreshing artwork pools: ${error.message}`);
