@@ -169,7 +169,8 @@ function formatTrainArrivals(arrivals, { lineCode = null } = {}) {
         arrivalTime: arrivalTime.format('HH:mm'),
         isApproaching: arrival.isApp === '1',
         isDelayed: arrival.isDly === '1',
-        runNumber: arrival.rn
+        runNumber: arrival.rn,
+        directionCode: arrival.trDr // Add direction code (1: N, 5: S)
       };
     })
     .sort((a, b) => a.minutesAway - b.minutesAway);

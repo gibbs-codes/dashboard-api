@@ -185,12 +185,12 @@ function formatTransitData(transitResult) {
       west: buses?.routes?.['77']?.westbound || []
     },
     red: {
-      north: trains?.lines?.red?.arrivals || [],
-      south: []
+      north: trains?.lines?.red?.north || [],
+      south: trains?.lines?.red?.south || []
     },
     brown: {
-      north: trains?.lines?.brown?.arrivals || [],
-      south: []
+      north: trains?.lines?.brown?.north || [],
+      south: trains?.lines?.brown?.south || []
     }
   };
 
