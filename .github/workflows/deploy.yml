@@ -76,30 +76,46 @@ jobs:
         echo "Building dashboard-api for organization ${{ github.repository_owner }}..."
         
         # Stop any existing container
+        # Stop and remove any existing container
         docker stop dashboard-api-production 2>/dev/null || true
         docker rm dashboard-api-production 2>/dev/null || true
         
         # Build the image
         docker build --no-cache -t dashboard-api:latest .
+        docker build -t dashboard-api:${{ github.sha }} -t dashboard-api:latest .
         
         # Run the container with shared network
         docker run -d \
           --name dashboard-api-production \
           --restart unless-stopped \
           --network gibbs-apps \
+          --label "app=dashboard-api" \
           -p 3001:3001 \
           --env-file .env \
           -e NODE_ENV=production \
           -e PORT=3001 \
           dashboard-api:latest
+          dashboard-api:${{ github.sha }}
         
     - name: Verify deployment
       run: |
         echo "Waiting for container to start..."
         sleep 15
+        for i in {1..10}; do
+          if curl -f http://localhost:3001/health; then
+            echo "✅ dashboard-api deployment successful!"
+            exit 0
+          fi
+          echo "Health check attempt $i failed. Retrying in 5 seconds..."
+          sleep 5
+        done
         
         echo "Checking container status..."
         docker ps | grep dashboard-api-production
+        echo "❌ Health check failed after multiple attempts."
+        echo "Container logs:"
+        docker logs dashboard-api-production
+        exit 1
         
         echo "Testing health endpoint..."
         if curl -f http://localhost:3001/health; then
@@ -114,6 +130,8 @@ jobs:
     - name: Clean up old images
       run: |
         docker image prune -f --filter label=app=dashboard-api || true
+        # Remove untagged images to clean up previous builds
+        docker image prune -f
         
     - name: Show final status
       run: |
