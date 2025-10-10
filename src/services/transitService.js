@@ -145,7 +145,7 @@ function formatBusPredictions(predictions, direction) {
         vehicleId: pred.vid
       };
     })
-    .filter(pred => pred.direction === direction)
+    .filter(pred => pred.direction.toLowerCase() === direction.toLowerCase())
     .sort((a, b) => a.minutesAway - b.minutesAway);
 
   return minutePredictions;

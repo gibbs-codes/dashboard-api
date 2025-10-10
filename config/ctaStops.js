@@ -23,11 +23,11 @@ module.exports = {
     route77: {
       routeId: '77',
       eastbound: {
-        stopId: '1129',  // Belmont & Sheffield (Eastbound)
+        stopId: '17379',  // Belmont & Sheffield (Eastbound)
         direction: 'Eastbound'
       },
       westbound: {
-        stopId: '1130',  // Belmont & Sheffield (Westbound)
+        stopId: '17380',  // Belmont & Sheffield (Westbound)
         direction: 'Westbound'
       }
     }
