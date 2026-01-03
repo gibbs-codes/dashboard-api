@@ -5,7 +5,33 @@ const GIPHY_API_BASE = 'https://api.giphy.com/v1/gifs';
 const GIPHY_API_KEY = process.env.GIPHY_API_KEY;
 
 /**
- * Search for cinemagraph GIFs on GIPHY
+ * Ambient/artistic search terms for refined cinemagraphs
+ * Focuses on nature, abstract, and artistic content
+ * Avoids cheesy pop culture/celebrity content
+ */
+const AMBIENT_SEARCH_TERMS = [
+  'cinemagraph nature',
+  'cinemagraph ocean waves',
+  'cinemagraph rain window',
+  'cinemagraph water flow',
+  'cinemagraph clouds sky',
+  'cinemagraph fire flames',
+  'cinemagraph smoke abstract',
+  'cinemagraph waterfall',
+  'cinemagraph city lights night',
+  'cinemagraph snow falling',
+  'cinemagraph fog mist',
+  'cinemagraph stars night sky',
+  'cinemagraph forest trees',
+  'cinemagraph candle flame',
+  'cinemagraph aurora borealis',
+  'cinemagraph beach waves',
+  'cinemagraph coffee steam',
+  'cinemagraph fountain water'
+];
+
+/**
+ * Search for cinemagraph GIFs on GIPHY with curated ambient search terms
  * @param {number} limit - Number of results to return
  * @param {number} offset - Offset for pagination
  * @returns {Promise<Array>} Array of cinemagraph objects
@@ -17,10 +43,15 @@ async function searchCinemagraphs(limit = 50, offset = 0) {
   }
 
   try {
+    // Pick a random ambient search term for variety
+    const searchTerm = AMBIENT_SEARCH_TERMS[Math.floor(Math.random() * AMBIENT_SEARCH_TERMS.length)];
+
+    logger.debug(`Searching GIPHY for: "${searchTerm}"`);
+
     const response = await axios.get(`${GIPHY_API_BASE}/search`, {
       params: {
         api_key: GIPHY_API_KEY,
-        q: 'cinemagraph',
+        q: searchTerm,
         limit,
         offset,
         rating: 'g', // Family-friendly content only
@@ -30,7 +61,7 @@ async function searchCinemagraphs(limit = 50, offset = 0) {
     });
 
     const gifs = response.data?.data || [];
-    logger.debug(`GIPHY API returned ${gifs.length} cinemagraphs`);
+    logger.debug(`GIPHY returned ${gifs.length} results for "${searchTerm}"`);
 
     return gifs;
   } catch (error) {

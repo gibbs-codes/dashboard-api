@@ -30,7 +30,14 @@ module.exports = {
     giphy: {
       enabled: true,
       weight: 10, // 10% of content will be cinemagraphs
-      rating: 'g' // Family-friendly content only
+      rating: 'g', // Family-friendly content only
+      // Custom search terms (optional) - uses ambient defaults if not specified
+      searchTerms: [
+        // Uncomment and customize these if you want specific themes:
+        // 'cinemagraph ocean waves',
+        // 'cinemagraph rain window',
+        // 'cinemagraph city lights night'
+      ]
     }
   }
 };
