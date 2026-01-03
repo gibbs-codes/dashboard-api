@@ -13,12 +13,12 @@ module.exports = {
   sources: {
     artic: {
       enabled: true,
-      weight: 40,
+      weight: 35,
       styles: ['Cubism', 'Expressionism', 'Surrealism', 'Abstract', 'Minimalism', 'Constructivism', 'Symbolism', 'Suprematism', 'Bauhaus']
     },
     met: {
       enabled: true,
-      weight: 40,
+      weight: 35,
       hasImages: true,
       departments: [11, 21, 26, 30] // European Paintings, The American Wing, Drawings/Prints, Photographs
     },
@@ -26,6 +26,11 @@ module.exports = {
       enabled: true,
       weight: 20,
       type: 'Painting'
+    },
+    giphy: {
+      enabled: true,
+      weight: 10, // 10% of content will be cinemagraphs
+      rating: 'g' // Family-friendly content only
     }
   }
 };

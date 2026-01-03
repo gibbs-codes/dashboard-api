@@ -2,6 +2,7 @@ const axios = require('axios');
 const logger = require('../utils/logger');
 const cacheManager = require('../utils/cacheManager');
 const artConfig = require('../../config/art');
+const giphyService = require('./giphyService');
 
 const ART_API_BASE = 'https://api.artic.edu/api/v1';
 const ART_IIIF_BASE = 'https://www.artic.edu/iiif/2';
@@ -241,6 +242,21 @@ async function fetchFromCleveland(orientation, filters = {}) {
   return normalized;
 }
 
+async function fetchFromGiphy(orientation) {
+  if (!giphyService.isConfigured()) {
+    throw new Error('GIPHY API key not configured');
+  }
+
+  try {
+    const cinemagraph = await giphyService.getRandomCinemagraph(orientation);
+    logger.debug(`Fetched GIPHY cinemagraph: ${cinemagraph.title}`);
+    return cinemagraph;
+  } catch (error) {
+    logger.error(`GIPHY fetch error: ${error.message}`);
+    throw error;
+  }
+}
+
 async function fetchFromSource(sourceKey, orientation, filters) {
   switch (sourceKey) {
     case 'artic':
@@ -249,6 +265,8 @@ async function fetchFromSource(sourceKey, orientation, filters) {
       return fetchFromMet(orientation, filters);
     case 'cleveland':
       return fetchFromCleveland(orientation, filters);
+    case 'giphy':
+      return fetchFromGiphy(orientation);
     default:
       throw new Error(`Unknown art source: ${sourceKey}`);
   }
