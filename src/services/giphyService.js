@@ -106,9 +106,11 @@ function normalizeCinemagraph(gif, requestedOrientation) {
   const orientation = actualOrientation || requestedOrientation;
 
   return {
-    // Use MP4 for better performance and looping
-    imageUrl: gif.images?.original?.mp4 || gif.images?.original?.url,
-    videoUrl: gif.images?.original?.mp4,
+    // Provide multiple format options for maximum compatibility
+    imageUrl: gif.images?.original?.url, // GIF fallback
+    videoUrl: gif.images?.original?.mp4, // MP4 for modern browsers
+    webpUrl: gif.images?.original?.webp, // WebP alternative
+    gifUrl: gif.images?.original?.url,   // Original GIF
     stillUrl: gif.images?.original_still?.url,
     title: gif.title || 'Cinemagraph',
     artist: gif.username || 'GIPHY User',
