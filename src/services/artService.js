@@ -25,6 +25,29 @@ const DEFAULT_HEADERS = {
   Accept: 'application/json'
 };
 
+// Religious keywords to filter out
+const RELIGIOUS_KEYWORDS = [
+  'christ', 'jesus', 'virgin', 'madonna', 'saint', 'holy', 'biblical', 'bible',
+  'apostle', 'crucifixion', 'resurrection', 'nativity', 'annunciation', 'pieta',
+  'crucified', 'crucifix', 'altar', 'cathedral', 'church', 'monastery', 'temple',
+  'buddha', 'buddhist', 'hindu', 'shiva', 'vishnu', 'krishna', 'religious',
+  'mosque', 'islamic', 'muhammad', 'prophet', 'divine', 'deity', 'god', 'angel',
+  'archangel', 'gospel', 'scripture', 'sermon', 'prayer', 'blessing', 'baptism',
+  'communion', 'eucharist', 'sacred', 'patron saint'
+];
+
+function containsReligiousContent(text) {
+  if (!text) return false;
+  const lowerText = text.toLowerCase();
+  return RELIGIOUS_KEYWORDS.some(keyword => lowerText.includes(keyword));
+}
+
+function isReligiousArtwork(artwork) {
+  return containsReligiousContent(artwork.title) ||
+         containsReligiousContent(artwork.artist) ||
+         containsReligiousContent(artwork.style);
+}
+
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
@@ -111,9 +134,17 @@ async function fetchFromArtic(orientation, filters = {}) {
       })
     : candidates;
 
-  const pick = randomItem(filtered.length ? filtered : candidates);
-  if (!pick) throw new Error('Artic: failed to pick artwork');
+  // Filter out religious content
+  const nonReligious = (filtered.length ? filtered : candidates).filter(item => {
+    const normalized = normalizeArtic(item, randomStyle);
+    return !isReligiousArtwork(normalized);
+  });
 
+  if (!nonReligious.length) {
+    throw new Error('Artic: all artworks filtered out as religious content');
+  }
+
+  const pick = randomItem(nonReligious);
   return normalizeArtic(pick, randomStyle);
 }
 
@@ -155,7 +186,7 @@ async function fetchFromMet(orientation, filters = {}) {
     throw new Error('Met: no objects returned for query');
   }
 
-  const attempts = Math.min(10, ids.length);
+  const attempts = Math.min(20, ids.length);
   for (let i = 0; i < attempts; i++) {
     const objectId = ids[Math.floor(Math.random() * ids.length)];
     const objectRes = await axios.get(`${MET_API_BASE}/objects/${objectId}`, {
@@ -170,10 +201,15 @@ async function fetchFromMet(orientation, filters = {}) {
       continue;
     }
 
+    // Filter out religious content
+    if (isReligiousArtwork(normalized)) {
+      continue;
+    }
+
     return normalized;
   }
 
-  throw new Error('Met: unable to find image matching orientation');
+  throw new Error('Met: unable to find non-religious image matching orientation');
 }
 
 function normalizeCleveland(item) {
@@ -231,9 +267,17 @@ async function fetchFromCleveland(orientation, filters = {}) {
       })
     : candidates;
 
-  const pick = randomItem(filtered.length ? filtered : candidates);
-  if (!pick) throw new Error('Cleveland: failed to pick artwork');
+  // Filter out religious content
+  const nonReligious = (filtered.length ? filtered : candidates).filter(item => {
+    const normalized = normalizeCleveland(item);
+    return !isReligiousArtwork(normalized);
+  });
 
+  if (!nonReligious.length) {
+    throw new Error('Cleveland: all artworks filtered out as religious content');
+  }
+
+  const pick = randomItem(nonReligious);
   const normalized = normalizeCleveland(pick);
   if (!normalized.imageUrl) {
     throw new Error('Cleveland: selected artwork missing image url');
